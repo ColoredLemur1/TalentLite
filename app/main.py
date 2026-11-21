@@ -1,14 +1,27 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 
 from app.auth import ApiKeyMiddleware, api_key_header
 from app.config import Settings, load_settings
+from app.db import init_db
 from app.errors import CatchAllErrorMiddleware, register_exception_handlers
 from app.middleware import SecurityHeadersMiddleware
 from app.routers import health
 
 
 def create_app(settings: Settings) -> FastAPI:
-    app = FastAPI(title="TalentLite", dependencies=[Depends(api_key_header)])
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        init_db(settings.database_path)
+        yield
+
+    app = FastAPI(
+        title="TalentLite",
+        dependencies=[Depends(api_key_header)],
+        lifespan=lifespan,
+    )
     app.state.settings = settings
     register_exception_handlers(app)
     app.include_router(health.router)

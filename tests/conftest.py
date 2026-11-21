@@ -17,8 +17,8 @@ def block_network(monkeypatch):
 
 
 @pytest.fixture
-def settings():
-    return Settings(api_key=TEST_API_KEY)
+def settings(tmp_path):
+    return Settings(api_key=TEST_API_KEY, database_path=str(tmp_path / "test.db"))
 
 
 @pytest.fixture

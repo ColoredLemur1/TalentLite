@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 PLACEHOLDER_API_KEY = "cambia-esto"
 MIN_API_KEY_LENGTH = 32
+DEFAULT_DATABASE_PATH = "talentlite.db"
 
 
 class ConfigError(Exception):
@@ -13,6 +14,7 @@ class ConfigError(Exception):
 @dataclass(frozen=True)
 class Settings:
     api_key: str
+    database_path: str = DEFAULT_DATABASE_PATH
 
 
 def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
@@ -25,4 +27,5 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
         raise ConfigError(
             f"API_KEY must be at least {MIN_API_KEY_LENGTH} characters long."
         )
-    return Settings(api_key=api_key)
+    database_path = env.get("DATABASE_PATH") or DEFAULT_DATABASE_PATH
+    return Settings(api_key=api_key, database_path=database_path)
