@@ -293,7 +293,7 @@ Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resu
 Objetivo del PR: conectar el análisis con la API: guardar cada análisis en la tabla `analysis_runs`, añadir `POST /candidates/{id}/analyze` y mostrar el último análisis en `GET /candidates/{id}`.
 
 Criterios que definí antes de pedir el código:
-- `analysis_runs` no guarda el CV. `reference` es única, `status` solo puede ser `succeeded` o `failed`, y `candidate_id` apunta a `candidates`. Las skills y el resultado van como JSON, con `?`, y la fecha sale de `utc_now_iso()`. Un análisis fallido guarda el resultado vacío. El insert hace commit.
+-Si `insert_analysis_run` recibe un fallo, `result` queda vacío. El endpoint de esta rama no la llama en ese caso.
 - El último análisis correcto es el de `created_at` más reciente y, si empatan, el de `id` mayor. Solo cuenta ese candidato. Una referencia repetida la rechaza la base de datos.
 - La oferta se limpia antes de medir y antes de buscar duplicados. El título tiene de 1 a 200 caracteres y las skills son de 1 a 30, cada una de 1 a 50. `["Python", " python "]` se rechaza. Un campo de más también.
 - El candidato se carga antes de llamar al modelo. Si no existe, la respuesta es 404 y el modelo no se llama. El CV sale de la fila guardada, no del cuerpo. Los ids `0` y `2**63` dan 422, igual que en el GET.
