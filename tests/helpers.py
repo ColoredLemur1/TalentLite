@@ -17,6 +17,10 @@ def read_cv(name: str) -> str:
     return (CV_FIXTURES / name).read_text(encoding="utf-8")
 
 
+class RealLLMCalledInTests(RuntimeError):
+    """Raised by the test guard if anything tries to call the real Gemini provider."""
+
+
 class ScriptedLLM:
     """A fake model that returns, or raises, the next scripted output on each call.
 

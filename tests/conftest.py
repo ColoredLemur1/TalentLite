@@ -1,3 +1,5 @@
+import importlib
+import importlib.util
 import socket
 
 import pytest
@@ -5,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from tests.helpers import TEST_API_KEY, ScriptedLLM
+from tests.helpers import TEST_API_KEY, RealLLMCalledInTests, ScriptedLLM
 
 
 @pytest.fixture(autouse=True)
@@ -14,6 +16,22 @@ def block_network(monkeypatch):
         raise RuntimeError("network blocked in tests")
 
     monkeypatch.setattr(socket.socket, "connect", refuse)
+
+
+@pytest.fixture(autouse=True)
+def block_real_llm(monkeypatch):
+    """Every test: calling the real Gemini provider raises instead of reaching Google.
+
+    It patches the class, so every instance is covered, including ones built inside the app.
+    """
+    if importlib.util.find_spec("app.llm.real") is None:
+        return  # The optional provider (Task 5.5) does not exist: nothing to block.
+    real = importlib.import_module("app.llm.real")
+
+    def refuse(self, system, user):
+        raise RealLLMCalledInTests("the real LLM must never be called in tests")
+
+    monkeypatch.setattr(real.GeminiLLM, "complete", refuse)
 
 
 @pytest.fixture
