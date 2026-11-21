@@ -5,6 +5,9 @@ from dataclasses import dataclass
 PLACEHOLDER_API_KEY = "cambia-esto"
 MIN_API_KEY_LENGTH = 32
 DEFAULT_DATABASE_PATH = "talentlite.db"
+# 256 KiB. The largest valid body is about 240 KB: 20,000 emojis, each written by
+# json.dumps as a 12-byte surrogate pair ("😀").
+DEFAULT_MAX_BODY_BYTES = 262_144
 
 
 class ConfigError(Exception):
@@ -15,6 +18,7 @@ class ConfigError(Exception):
 class Settings:
     api_key: str
     database_path: str = DEFAULT_DATABASE_PATH
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
 
 
 def load_settings(env: Mapping[str, str] = os.environ) -> Settings:

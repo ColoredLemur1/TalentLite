@@ -7,7 +7,7 @@ from app.auth import ApiKeyMiddleware, api_key_header
 from app.config import Settings, load_settings
 from app.db import init_db
 from app.errors import CatchAllErrorMiddleware, register_exception_handlers
-from app.middleware import SecurityHeadersMiddleware
+from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import candidates, health
 
 
@@ -27,7 +27,8 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(health.router)
     app.include_router(candidates.router)
     # The last middleware added is the outermost:
-    # security headers, then catch-all, then auth, then the app.
+    # security headers, then catch-all, then auth, then body limit, then the app.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes)
     app.add_middleware(ApiKeyMiddleware, api_key=settings.api_key)
     app.add_middleware(CatchAllErrorMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
