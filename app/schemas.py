@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
@@ -97,3 +97,37 @@ class CandidateOut(BaseModel):
     cv_text: str
     created_at: str
     latest_analysis: AnalysisResult | None = None
+
+
+class AuditItem(BaseModel):
+    """One analysis attempt as the audit shows it.
+
+    There is no error_detail field at all, not even optional: what the model got wrong
+    stays in the database, and the audit cannot serialize what it does not have.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    id: int
+    created_at: str
+    job_title: str
+    required_skills: list[str]
+    status: Literal["succeeded", "failed"]
+    result: AnalysisResult | None
+    error_code: str | None
+    provider: str
+    model: str
+    prompt_version: str
+    attempts: int
+    duration_ms: int
+    reference: str
+
+
+class AuditPage(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    candidate_id: int
+    items: list[AuditItem]
+    total: int
+    limit: int
+    offset: int
