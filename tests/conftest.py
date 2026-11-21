@@ -19,11 +19,14 @@ def block_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def block_real_llm(monkeypatch):
+def block_real_llm(request, monkeypatch):
     """Every test: calling the real Gemini provider raises instead of reaching Google.
 
     It patches the class, so every instance is covered, including ones built inside the app.
+    Only modules marked real_llm_adapter (fake client, network still blocked) are skipped.
     """
+    if request.node.get_closest_marker("real_llm_adapter"):
+        return
     if importlib.util.find_spec("app.llm.real") is None:
         return  # The optional provider (Task 5.5) does not exist: nothing to block.
     real = importlib.import_module("app.llm.real")
