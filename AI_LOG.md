@@ -221,3 +221,66 @@ Límites:
 - Un `IntegrityError` que no sea de unicidad se relanza. No hay test que lo provoque, porque una fila válida no puede generarlo.
 - Los tests amarillos no afirman un umbral. Solo informan los tiempos, y Y2 muestra que la búsqueda usa `sqlite_autoindex_candidates_1`.
 - `check_same_thread=False` vale porque cada conexión sirve una petición, un paso cada vez. No se comparte entre dos peticiones a la vez.
+
+---
+
+## Entrada 5 · feat/llm-layer · PR #5 · 2026-11-21
+Modo: A, supervisión cercana (partes: tareas 5.2, 5.4 y 5.5, por partes pequeñas con una pausa tras cada una) · B, delegado con un punto de control (partes: tareas 5.1 y 5.3) · B, automático (parte: tarea 5.6, test amarillo).
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: la capa de IA: interfaz del LLM con el mock por defecto, prompt con los datos separados de las instrucciones, validación estricta de la respuesta del modelo, mock con la rúbrica 50/30/20, reintentos limitados, proveedor Gemini opcional y el test amarillo Y3.
+
+Criterios que definí antes de pedir el código:
+- `LLM_PROVIDER` por defecto es `mock`, en minúsculas, y solo acepta `mock` o `gemini`. Gemini sin `GEMINI_API_KEY` o sin `GEMINI_MODEL` no arranca. El mensaje nombra la variable, nunca la clave. Las dos claves quedan fuera del `repr` de `Settings`.
+- El timeout de Gemini es 60 segundos, salvo que `GEMINI_TIMEOUT_SECONDS` sea un número positivo y finito.
+- El mensaje de sistema lleva las instrucciones, la rúbrica y el esquema. La oferta y el CV van en el mensaje de usuario, cada uno entre marcadores con un nonce de 32 caracteres hexadecimales. Lo de dentro es dato, no instrucciones.
+- Rúbrica 50/30/20. Skills: mitad hacia arriba y solo la palabra completa. Años: 0 -> 0, 1–2 -> 10, 3–7 -> 20, 8 o más -> 30. Evidencia: el título completo da 20, al menos la mitad de sus palabras de 4 letras o más da 10, y si no, 0. Las skills salen en minúsculas, sin repetir y en el orden del CV.
+- La salida no se repara. Un JSON inválido, un tipo mal o un campo de más se rechaza. El resumen del error lleva rutas y tipos, y el nombre de un campo inventado se enmascara. Como máximo 3 intentos, y solo se reintenta una salida inválida. Un timeout o un fallo del proveedor termina tras ese intento.
+- Los tests no llaman a Gemini ni abren la red. El cliente del SDK se sustituye por uno falso. La llamada real la hago yo, con un CV inventado, y no anoto la clave ni la respuesta en bruto.
+
+Prompts relevantes (traducidos del inglés):
+1. "No te saltes la tarea de Gemini: ya tengo la clave en `.env`."
+2. "El timeout de Gemini por defecto es de 60 segundos, y las dos claves se quedan fuera del `repr` de `Settings`."
+3. "En los tests del prompt añade: un título o una skill con un marcador de cierre falso no cierra el bloque de la oferta, el nonce tiene 32 caracteres hexadecimales, el mensaje de sistema nombra los cuatro marcadores y dice que lo de dentro es dato, y el título de la oferta nunca aparece en el mensaje de sistema."
+4. "La regla de evidencia: el título completo da 20; la mitad de sus palabras de 4 letras o más da 10; si no, 0. Las skills se devuelven en minúsculas, sin repetir y en el orden del CV."
+5. "En la validación de la salida añade: años de 80 se aceptan y 81 o `True` se rechazan, un doble bloque ```json se rechaza, y el nombre de un campo inventado no aparece en el resumen del error."
+6. "Cambia los tramos de años: de 3 a 7 años son 20 puntos y 8 o más son 30."
+7. "En los reintentos añade: el prompt se construye una sola vez, la duración cuenta todos los intentos y los textos exactos de `error_detail`."
+8. "Los tests del adaptador de Gemini se saltan el guardián con una marca propia (`real_llm_adapter`), no con `GeminiLLM.__dict__`, y la red sigue bloqueada."
+9. "Los timeouts del SDK llegan como `httpx2.TimeoutException`, no como `httpx`: captúralos como timeout. Y si la respuesta no trae texto, devuelve una cadena vacía."
+
+Qué generó la IA:
+- Código: `app/llm/base.py`, `factory.py`, `mock.py`, `prompt.py`, `output.py` y `real.py`, y `app/analysis.py`, más cambios en `app/config.py` (proveedor, clave y modelo de Gemini, timeout) y `app/main.py` (`create_app` acepta un LLM).
+- Tests: 67 nuevos (6 de la fábrica, 11 del prompt, 18 de la salida, 13 del mock, 10 de los reintentos, 2 del guardián y 7 del adaptador de Gemini) y el test amarillo Y3. También los 3 CV inventados de prueba, `ScriptedLLM`, `valid_output` y `read_cv` en `tests/helpers.py`, el guardián `block_real_llm` y el fixture `make_client` en `tests/conftest.py`, y la marca `real_llm_adapter` en `pytest.ini`.
+- Dependencia nueva: `google-genai==3.6.1`; `pip-audit` no encontró avisos.
+- Commits `4ebb4c5`, `b633ffc`, `5783eb9`, `f7661b4` y `0af056c`, hechos por mí. El commit `fb15954` (test amarillo Y3) lo hizo la IA, con su firma, por ser una tarea verde.
+
+Cómo lo verifiqué:
+- En cada tarea vi los tests en rojo antes de implementar y en verde después.
+- `make check` en verde: 145 tests y 97 % de cobertura (100 % en el prompt, la validación, el servicio de análisis y el adaptador de Gemini).
+- Calculé a mano las puntuaciones de los 3 CV (90, 30 y 90) y los casos de skills (13, 38 y 20), y coinciden con el mock. El CV malicioso da exactamente el mismo resultado que el limpio.
+- Comprobé que ningún mensaje de error de la configuración contiene una clave, y que las claves no salen al imprimir `Settings`.
+- El guardián del LLM real lo probé primero con un proveedor falso temporal y después con el `GeminiLLM` real: cualquier llamada lanza `RealLLMCalledInTests`.
+- Durante la pausa se comprobó el SDK instalado: el timeout va en milisegundos y su cliente por defecto usa `httpx2`, cuyos timeouts no son `TimeoutError`. Rechacé capturar `httpx.TimeoutException`. El test del timeout de `httpx2` se pone en rojo si se quita esa captura.
+- Y3: con un modelo falso de 50 ms por llamada, acertar a la primera cuesta 55 ms y 2.549 caracteres, y al tercer intento 158 ms y 7.647 caracteres: el coste crece con cada intento y el tope de 3 lo limita.
+- Llamada real a Gemini, con el CV inventado del senior y la oferta de Backend Developer: `succeeded` al primer intento, en 1.033 ms, `match_score` 90 y 8 años. Las skills fueron `python`, `fastapi`, `sql` y `docker`. Es el mismo 90 que el mock. No anoté el resumen ni la clave.
+- Revisión de la IA (modo C): no hecha. La revisión de esta rama fueron las pausas de cada parte.
+
+Qué corregí a mano y por qué:
+- No reescribí los archivos a mano. En cada pausa leí el resultado, lo rechacé cuando no cumplía una regla y cambié el encargo antes de seguir:
+- `app/config.py`: el timeout por defecto pasó de 30 a 60 segundos, antes del commit de la tarea 5.1. Treinta segundos se queda corto para una respuesta JSON, y las dos claves siguen fuera del `repr`.
+- `app/llm/mock.py`, `app/llm/prompt.py` y el test de tramos: los 30 puntos de años empiezan en 8, no en 6. De 3 a 7 años quedan en 20. Lo fijé yo para que el mock, el prompt y el test contaran la misma rúbrica.
+- `app/llm/prompt.py` y `app/llm/mock.py`: la evidencia y las skills tenían que coincidir. Título completo, 20. Al menos la mitad de las palabras de 4 letras o más, 10. Si no, 0. Las skills salen en minúsculas, sin repetir y en el orden del CV.
+- `tests/unit/test_gemini_adapter.py`: rechacé llegar al método real por `GeminiLLM.__dict__`. El guardián ya ha sustituido ese método, así que el test solo vería el rechazo. Los tests van con la marca `real_llm_adapter` y la red sigue bloqueada.
+- `app/llm/real.py`: con esa comprobación del SDK, no acepté capturar `httpx.TimeoutException`. El cliente por defecto es `httpx2`, y un timeout real habría acabado como proveedor no disponible. También pedí que una respuesta sin texto devuelva `""`, para que sea una salida inválida y no un 500.
+- La llamada real la ejecuté yo, con un CV inventado. La IA no leyó `.env` ni vio la respuesta.
+
+Límites:
+- La rúbrica se la pide el prompt a Gemini. El código no vuelve a calcular el `match_score`. La llamada real dio 90, igual que el mock, en un solo CV inventado. No prueba el resto de tramos.
+- Los marcadores no obligan al modelo. La validación rechaza un JSON mal formado y no comprueba que la suma de la rúbrica sea la del `match_score`.
+- No provoqué un timeout real contra Google. El mapeo de `httpx2` lo cubre un test con un cliente falso.
+- Si el proceso fuerza el cliente `httpx`, ese timeout se vería como proveedor no disponible. El cliente por defecto es `httpx2`.
+- `httpx2` no está fijado en `requirements.txt`. Llega porque `google-genai==3.6.1` depende de él. La versión instalada es 2.16.2.
+- La comprobación de clave y modelo dentro de `make_llm` no tiene test. `load_settings` ya la hace, y esa línea queda sin cobertura. Está para que un `Settings` escrito a mano no llegue al SDK y este lea la clave del entorno.
+- El test amarillo no pone un tope. El tope de 3 intentos ya está en el servicio, y solo se reintenta una salida inválida. Y3 mide el coste. Tampoco limita cuántas veces se puede pedir un análisis: el endpoint llega en la rama 6.
+- La llamada real no pasó por HTTP. La hice con un script que llama a `run_analysis`. El aviso de Starlette desapareció porque el SDK instaló `httpx2` y el cliente de tests lo usa. `httpx==0.28.1` sigue fijado en las dependencias de desarrollo.
+- El nivel gratuito puede usar los prompts para mejorar los productos de Google. Por eso el CV era inventado.
