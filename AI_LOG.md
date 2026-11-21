@@ -114,3 +114,57 @@ Qué corregí a mano y por qué:
 - Quité la línea "Review en el PR" de la plantilla de entrada: los comentarios ya están en GitHub y no quiero repetirlos aquí.
 
 Límites: las reglas de `AGENTS.md` dependen de que el agente las siga; solo la de `.env` está reforzada con un bloqueo en la configuración local del agente.
+
+---
+
+## Entrada 3 · feat/api-base-and-auth · PR #3 · 2026-11-21
+Modo: A, supervisión cercana (partes: tareas 3.1 y 3.2, por partes pequeñas con una pausa tras cada una) · B, delegado con un punto de control (parte: tarea 3.3).
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: la base de la API: configuración que no arranca con una clave débil, formato único de errores, autenticación por `X-API-Key` en todas las rutas, `/health` y cabeceras de seguridad en todas las respuestas.
+
+Criterios que definí antes de pedir el código:
+- La app no arranca si `API_KEY` falta, es exactamente `cambia-esto`, o tiene menos de 32 caracteres. Una clave de 32 caracteres sí vale. El texto de `ConfigError` no contiene la clave.
+- Los tests usan la `TEST_API_KEY` del plan (`"test-key-" + "k" * 34`). No leen `.env`.
+- Cada código de error tiene una frase fija. Un 422 devuelve solo `loc`, `msg` y `type`, sin `input` ni `ctx`. Un 500 es genérico, lleva una `reference` de 16 caracteres, y el log guarda el tipo de excepción y esa referencia, nunca el mensaje.
+- Toda ruta exige `X-API-Key`, salvo `/docs`, `/docs/oauth2-redirect`, `/redoc` y `/openapi.json`, comparadas por igualdad exacta. La clave se lee en bytes y se compara con `secrets.compare_digest`. Si no hay clave, el cuerpo no se lee: un JSON roto responde 401, no 422.
+- `/health` exige la clave y responde `{"status": "ok"}`. Las cuatro cabeceras de seguridad van en todas las respuestas, también en el 401 y en el 500.
+
+Prompts relevantes (traducidos del inglés):
+1. "Usa la `TEST_API_KEY` del plan y proponme los mensajes de error para que yo los apruebe."
+2. "Apruebo los 9 tests del plan. Añade dos: una clave de exactamente 32 caracteres se acepta, y el texto de una clave rechazada nunca aparece en el mensaje de `ConfigError`."
+3. "No quites los espacios de la clave: D7 no lo pide y no hay test para eso."
+4. "Añade un middleware ASGI que capture cualquier excepción, devuelva el mismo 500 genérico y no la vuelva a lanzar, para que la traza con el mensaje no llegue al log del servidor. Solo debe registrar el tipo de excepción y la referencia, nunca el mensaje ni la traza. Pruébalo con un cliente normal que espere un 500 y no una excepción."
+5. "Deja `msg` en los detalles del 422, como pide D16, y apúntalo como límite."
+6. "Apruebo los 13 tests de autenticación. Añade: `/docsx` sin clave da 401 y no 404 (para pillar un `startswith`), `compare_digest` recibe bytes en los dos lados, y la clave incorrecta tampoco sale en los logs."
+7. "Mantén el cierre de las conexiones websocket sin clave (fail-closed)."
+8. "El orden de los middlewares, de fuera hacia dentro, es: cabeceras, catch-all, autenticación. Las cabeceras siempre van por fuera para que también salgan en el 500."
+
+Qué generó la IA:
+- Código: `app/config.py`, `app/errors.py` (con `CatchAllErrorMiddleware`), `app/main.py`, `app/auth.py`, `app/middleware.py` y `app/routers/health.py`.
+- Tests: `tests/conftest.py`, `tests/helpers.py` y 30 tests nuevos: 6 de configuración, 6 de errores, 14 de autenticación y 4 de `/health` y cabeceras.
+- Commits `f02deca`, `89a7828` y `9baf7b7`, hechos por mí.
+
+Cómo lo verifiqué:
+- En cada tarea vi los tests en rojo antes de implementar y en verde después.
+- `make check` en verde: 31 tests y 97 % de cobertura.
+- El test del catch-all se pone en rojo si se quita el middleware, así que es lo único que protege contra esa fuga.
+- Con scripts aparte comprobé que la autenticación responde 401 sin leer el cuerpo, que los websockets se cierran con el código 1008 y que las cabeceras de seguridad salen también en el 500 y en `/openapi.json`.
+- Bug a ciegas: la IA metió un error en `app/auth.py::ApiKeyMiddleware.__call__` sin decirme dónde menos el archivo donde se puso.
+  Lo encontré leyendo: sí. Era un `startswith` en la excepción de las rutas de documentación, que dejaba sin clave cualquier ruta que empezara por `/docs`.
+  Lo atrapó `test_path_starting_like_docs_still_requires_key`, el test extra que pedí yo; ninguno de los tests que nombraba el plan lo detectaba. Lo deshice con `git restore` y no se commiteó.
+- Revisión de la IA (modo C): no hecha. La revisión de esta rama fueron las pausas de cada parte y el bug a ciegas.
+
+Qué corregí a mano y por qué:
+- No reescribí los archivos a mano. Cuando el resultado no cumplía una regla, paré y cambié el encargo:
+- `app/errors.py`: Starlette volvía a lanzar la excepción después del 500, y la traza llevaba el mensaje. Pedí un middleware que responde el mismo 500 y no relanza, en vez de apuntarlo solo como límite.
+- `app/auth.py`: mantuve el cierre de websocket con código 1008. Dejar pasar la conexión habría sido una ruta sin clave.
+- `app/main.py`: el orden, de fuera hacia dentro, quedó en cabeceras, catch-all y autenticación. El último `add_middleware` es el de fuera, así el 500 también lleva las cabeceras.
+- No pedí recortar espacios en la clave ni quitar `msg` del 422. D7 y D16 no lo permiten.
+
+Límites:
+- El `msg` de un 422 puede citar el carácter inválido, pero nunca el valor completo enviado.
+- Una clave hecha solo de espacios se acepta si llega a 32 caracteres. D7 no pide recortar.
+- Si la excepción salta cuando la respuesta ya empezó, el catch-all no sustituye el cuerpo: el cliente ve la respuesta cortada y el log sigue teniendo solo el tipo y la referencia.
+- `/docs`, `/docs/oauth2-redirect`, `/redoc` y `/openapi.json` no piden clave, a propósito.
+- pytest no ejecuta el cierre de websocket, porque no hay rutas websocket. Lo comprobé con un script.
+- Dejo el aviso de Starlette sobre `httpx` y `httpx2`. Las versiones están fijadas y los tests pasan.
