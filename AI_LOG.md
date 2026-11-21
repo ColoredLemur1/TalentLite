@@ -383,3 +383,45 @@ Límites:
 - No hay un test del `offset` 1.000.001 ni de los ids `0` y `2**63` en `/audit`. El código los rechaza igual que en el GET y en el análisis.
 - Y4 es la medida de antes del índice. Con 10.000 análisis las dos consultas todavía hacen `SCAN analysis_runs`. El índice llega en la rama 8.
 - Una puntuación válida pero equivocada se guarda y la auditoría la muestra. Es el mismo límite que en la rama 6.
+
+---
+
+## Entrada 8 · perf/benchmarks · PR #8 · 2026-11-21
+Modo: B, automático (parte: tarea 8.1, el índice y sus tests).
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: acelerar las consultas de `analysis_runs` con un índice por candidato y demostrarlo con el plan de consulta y con el test amarillo Y4, antes y después.
+
+Criterios que definí antes de pedir el código:
+- La tarea 8.1 ya estaba en verde: un índice mal puesto solo haría las consultas más lentas, y los tests del plan de consulta lo agarran. Por eso no la partí en pausas. La IA escribe el índice y los tests, pasa `make check` y hace el commit, con su firma.
+- No añadí criterios míos. Los que ya valían son estos: un solo índice, `idx_analysis_runs_candidate`, sobre `analysis_runs(candidate_id, created_at DESC, id DESC)`, con `CREATE INDEX IF NOT EXISTS`.
+- Los tests comprueban el nombre del índice y que no aparezca `SCAN analysis_runs`. No fijan el texto completo del plan.
+- La prueba de una tarea verde: quitar la línea del índice pone los tests en rojo, y devolverla los deja en verde.
+
+Prompts relevantes (resumidos y traducidos del inglés):
+1. "Continúa con la tarea 8.1."
+
+Qué generó la IA: el índice `idx_analysis_runs_candidate` sobre `analysis_runs(candidate_id, created_at DESC, id DESC)` en `app/db.py`, y `tests/unit/test_query_plans.py` con 3 tests. Commit `68765eb`, hecho por la IA, con su firma, por ser una tarea verde.
+
+Cómo lo verifiqué:
+- `make check` en verde: 203 tests y 97 % de cobertura.
+- Los tests miran solo el nombre del índice y que no aparezca `SCAN analysis_runs`, no el texto completo del plan, porque mi Mac, la imagen de Docker y el CI usan versiones distintas de SQLite y las describen de forma algo distinta.
+- Antes del índice, el último análisis y la página de auditoría salían como `SCAN analysis_runs / USE TEMP B-TREE FOR ORDER BY`. El recuento salía como `SCAN analysis_runs`, sin esa ordenación, porque esa consulta no tiene `ORDER BY`. El tercer test fallaba porque el índice no estaba en `sqlite_master`. Con el índice, las tres consultas pasan a `SEARCH analysis_runs USING INDEX idx_analysis_runs_candidate`; las dos que ordenan ya no crean el árbol temporal, y el recuento usa un índice de cobertura.
+- Al quitar la línea del índice los 3 tests se ponen en rojo, y al devolverla vuelven a verde.
+- Y4, con 10.000 análisis por candidato y 5 candidatos más (mediana de 5 peticiones):
+
+  | Petición | Antes | Después |
+  |---|---|---|
+  | `GET /candidates/{id}` | 4,19 ms | 1,48 ms |
+  | Auditoría, primera página | 8,18 ms | 2,34 ms |
+  | Auditoría, última página | 15,69 ms | 1,55 ms |
+
+  Con 1.000 análisis la mejora es pequeña (la última página pasa de 1,95 ms a 1,11 ms), porque hay poco que recorrer.
+
+Qué corregí a mano y por qué:
+- Nada. No reescribí `app/db.py` ni los tests, y no cambié el encargo. El único prompt fue continuar la tarea 8.1. Al ser de bajo riesgo, la comprobación es `make check` y la prueba de quitar y devolver el índice, no una corrección a mano.
+
+Límites:
+- Los tiempos son de mi máquina y de peticiones sueltas: varían de una ejecución a otra, por eso lo importante es el cambio del plan y la mejora de la última página, no las cifras exactas.
+- Las bases de datos que ya existían reciben el índice la próxima vez que arranca la app (`CREATE INDEX IF NOT EXISTS`); con muchos datos, crearlo la primera vez puede tardar.
+- El `EXPLAIN QUERY PLAN` de los 3 tests corre sobre una base recién creada, sin las 10.000 filas. Con esas filas solo medí tiempos, no volví a pedir el plan.
+- No hice revisión en modo C. En una tarea verde el control es el que queda arriba.
