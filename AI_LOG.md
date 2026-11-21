@@ -168,3 +168,56 @@ Límites:
 - `/docs`, `/docs/oauth2-redirect`, `/redoc` y `/openapi.json` no piden clave, a propósito.
 - pytest no ejecuta el cierre de websocket, porque no hay rutas websocket. Lo comprobé con un script.
 - Dejo el aviso de Starlette sobre `httpx` y `httpx2`. Las versiones están fijadas y los tests pasan.
+
+---
+
+## Entrada 4 · feat/candidates · PR #4 · 2026-11-21
+Modo: A, supervisión cercana (partes: tareas 4.1 y 4.2, por partes pequeñas con una pausa tras cada una) · B, delegado con un punto de control (parte: tarea 4.3) · B, automático (parte: tarea 4.4, tests amarillos).
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: guardar y leer candidatos: base de datos SQLite, `POST /candidates` y `GET /candidates/{id}` con todas las validaciones de entrada, límite de tamaño del cuerpo y los tests amarillos Y1 e Y2.
+
+Criterios que definí antes de pedir el código:
+- SQLite con `sqlite3`, consultas solo con `?`, y sin Docker. El contenedor llega en la rama 10. `DATABASE_PATH` es una ruta; por defecto `talentlite.db`.
+- El email repetido lo rechaza `UNIQUE`, sin consulta previa. Solo `SQLITE_CONSTRAINT_UNIQUE` se convierte en duplicado. El 409 y `DuplicateEmailError` no llevan el email. El log lleva solo el id.
+- El nombre se recorta antes de medir la longitud. El CV no se recorta: se guarda tal cual, y solo se rechaza si queda vacío al recortar una copia. Los tests no leen `.env` y usan datos inventados.
+- El GET devuelve exactamente `id`, `name`, `email`, `cv_text`, `created_at` y `latest_analysis`. El id del path va de 1 a `2**63 - 1`, para que un id enorme sea 422 y no un 500 de SQLite.
+- Cada petición abre su conexión y la cierra en `finally`. `PRAGMA foreign_keys = ON` va en cada conexión. `init_db` corre al arrancar y no borra filas.
+
+Prompts relevantes (traducidos del inglés):
+1. "Apruebo los 4 tests de la base de datos. Añade tres: una segunda conexión ve el candidato insertado (o sea, se hizo commit), un segundo `init_db` no borra la fila, y `PRAGMA foreign_keys` vale 1 en cada conexión nueva."
+2. "Mantén estos añadidos: `check_same_thread=False`, solo `SQLITE_CONSTRAINT_UNIQUE` se convierte en email duplicado, y `get_candidate` nombra sus cinco columnas en vez de `SELECT *`."
+3. "Apruebo los 32 tests de candidatos. Cambia el test del email de 255 caracteres por una pareja con partes de dominio válidas: 254 caracteres da 201 y 255 da 422. Añade que el GET devuelve exactamente los 6 campos del enunciado y que un CV con espacios alrededor se guarda tal cual."
+4. "Deja `api_routes` leyendo el documento OpenAPI, no los objetos internos de FastAPI."
+5. "El GET acepta solo ids de 1 a 2**63 − 1."
+6. "Para los tests amarillos usa 50 POST y tamaños de 10, 1.000 y 10.000 candidatos."
+
+Qué generó la IA:
+- Código: `app/db.py`, `app/schemas.py`, `app/routers/candidates.py` y `BodySizeLimitMiddleware` en `app/middleware.py`, más cambios en `app/config.py` (`database_path`, `max_body_bytes`), `app/errors.py` (413) y `app/main.py` (arranque y orden de los middlewares).
+- Tests: 47 nuevos (7 de base de datos, 35 de candidatos y 5 del límite de cuerpo) y 2 tests amarillos (Y1 e Y2) con su `report.py`. También `candidate_payload` en `tests/helpers.py`, y se quitó la ruta temporal `/_test/echo` de los tests de autenticación.
+- Commits `5f1ad9e`, `9d51bf8` y `ea233ba`, hechos por mí. El commit `8876668` (tests amarillos) lo hizo la IA, con su firma, por ser una tarea verde.
+
+Cómo lo verifiqué:
+- En cada tarea vi los tests en rojo antes de implementar y en verde después.
+- `make check` en verde: 78 tests y 98 % de cobertura.
+- El test del commit se pone en rojo si se quita `conn.commit()`, así que es lo que protege contra perder escrituras.
+- El test del email de 255 caracteres del plan fallaba por otro motivo (una parte del dominio demasiado larga), así que no probaba el límite de 254. Lo comprobé con la librería de emails y lo cambié por la pareja 254/255.
+- La comprobación de "lista de rutas no vacía" destapó un problema real: FastAPI 0.165 envuelve los routers incluidos, así que los tests de "todas las rutas" no comprobaban `/health` desde la rama 3. Ahora leen las rutas del documento OpenAPI y cubren `/health`, `POST /candidates` y `GET /candidates/{id}`.
+- Con scripts aparte comprobé que el arranque crea la base de datos, que la conexión se cierra después de cada petición y que el test de subida por trozos pasa de verdad por el contador de bytes (sin `Content-Length`).
+- El cuerpo válido más grande (20.000 emojis) ocupa 240.056 bytes, por debajo del límite de 262.144.
+- Tests amarillos: Y1, mediana de 1,38 ms y p95 de 2,38 ms. Y2, la búsqueda por email usa el índice `sqlite_autoindex_candidates_1` y tarda lo mismo con 10 que con 10.000 candidatos.
+- Revisión de la IA (modo C): no hecha. La revisión de esta rama fueron las pausas de cada parte.
+
+Qué corregí a mano y por qué:
+- No reescribí los archivos a mano. Paré el trabajo y cambié el encargo cuando el resultado no cumplía una regla:
+- El test de email de 255 caracteres del plan no medía el límite de 254: la librería lo rechazaba porque una parte del dominio pasaba de 63 caracteres. Lo cambié por una pareja con partes válidas: 254 da 201 y 255 da 422.
+- `api_routes` lee el documento OpenAPI. Caminar los objetos internos de FastAPI 0.165 habría dependido de un detalle que ya cambió, y sin el cambio los bucles de autenticación no veían `/health`.
+- El CV se guarda con los espacios. Recortarlo no evita una instrucción dentro del texto, y el enunciado pide conservar el CV.
+- No metí Docker en esta rama. La base de datos es un archivo SQLite que el contenedor envolverá después.
+
+Límites:
+- Una instrucción dentro del CV se guarda igual que el resto del texto. La protección del prompt es la rama 5, con el nonce, no recortar el CV aquí.
+- `api_routes` no lista una ruta oculta con `include_in_schema=False`. El middleware igual le exige la clave.
+- El tope de 254 caracteres del email lo impone la librería, no un `max_length` mío. La pareja 254/255 lo fija.
+- Un `IntegrityError` que no sea de unicidad se relanza. No hay test que lo provoque, porque una fila válida no puede generarlo.
+- Los tests amarillos no afirman un umbral. Solo informan los tiempos, y Y2 muestra que la búsqueda usa `sqlite_autoindex_candidates_1`.
+- `check_same_thread=False` vale porque cada conexión sirve una petición, un paso cada vez. No se comparte entre dos peticiones a la vez.
