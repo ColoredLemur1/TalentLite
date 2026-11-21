@@ -1,10 +1,20 @@
 import json
 import re
 import time
+from pathlib import Path
 
 from fastapi import FastAPI
 
 TEST_API_KEY = "test-key-" + "k" * 34
+
+CV_FIXTURES = Path(__file__).parent / "fixtures" / "cvs"
+OFFER_TITLE = "Backend Developer"
+OFFER_SKILLS = ["Python", "FastAPI", "SQL", "Docker", "Kubernetes"]
+
+
+def read_cv(name: str) -> str:
+    """One of the invented fixture CVs in tests/fixtures/cvs."""
+    return (CV_FIXTURES / name).read_text(encoding="utf-8")
 
 
 class ScriptedLLM:

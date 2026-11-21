@@ -1,0 +1,20 @@
+Laura Méndez Ríos
+Backend Developer
+
+Summary
+Backend Developer with 8 years of experience building web APIs and data services
+for logistics and retail companies.
+
+Experience
+- Senior Backend Developer, Rutas del Norte (invented company)
+  Designed REST APIs in Python with FastAPI, used by the mobile and web teams.
+  Modelled and tuned SQL queries for the order and stock databases.
+  Packaged every service with Docker and wrote the local development setup.
+- Backend Developer, Tienda Ficticia S.L. (invented company)
+  Maintained the Python order service and its SQL reports.
+
+Skills
+Python, FastAPI, SQL, Docker, Git, REST
+
+Education
+Degree in Computer Engineering.

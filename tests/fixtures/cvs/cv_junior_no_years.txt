@@ -1,0 +1,17 @@
+Diego Álvarez Soto
+Junior Developer
+
+Summary
+Recently graduated developer looking for a first role in a product team.
+
+Projects
+- Library manager (university project): small Python application that stores
+  books and loans in a SQL database.
+- Personal budget tool: Python scripts that read bank exports and build monthly
+  reports.
+
+Skills
+Python, SQL, Git
+
+Education
+Higher Vocational Training in Web Application Development.
