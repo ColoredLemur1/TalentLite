@@ -1,4 +1,4 @@
-.PHONY: check perf
+.PHONY: check perf audit
 
 check:
 	ruff check .
@@ -7,3 +7,6 @@ check:
 
 perf:
 	pytest -m performance -s
+
+audit:
+	pip-audit -r requirements.txt -r requirements-dev.txt
