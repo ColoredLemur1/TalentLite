@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
     reference TEXT NOT NULL UNIQUE,
     duration_ms INTEGER NOT NULL
 );
+
+-- Every analysis_runs query filters by candidate_id and sorts by created_at, id
+-- newest first. The same order in the index lets SQLite read one candidate's rows
+-- already sorted, instead of scanning and sorting the whole table.
+CREATE INDEX IF NOT EXISTS idx_analysis_runs_candidate
+    ON analysis_runs(candidate_id, created_at DESC, id DESC);
 """
 
 
