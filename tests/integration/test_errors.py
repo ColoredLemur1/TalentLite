@@ -3,9 +3,9 @@
 import logging
 
 import pytest
-from app.main import create_app
 from pydantic import BaseModel, EmailStr
 
+from app.main import create_app
 
 class EchoBody(BaseModel):
     email: EmailStr
