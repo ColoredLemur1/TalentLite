@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.main import create_app
 
+
 class EchoBody(BaseModel):
     email: EmailStr
 
