@@ -1,0 +1,15 @@
+services:
+  api:
+    build: .
+    ports:
+      # Published on this computer only, not on every network interface.
+      - "127.0.0.1:8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/talentlite.db
+    volumes:
+      - talentlite_data:/data
+    restart: unless-stopped
+
+volumes:
+  talentlite_data:
