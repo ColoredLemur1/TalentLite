@@ -386,7 +386,7 @@ Límites:
 
 ---
 
-## Entrada 8 · perf/benchmarks · PR #8 · 2026-11-21
+## Entrada 8 · perf/benchmarks · PR #10 · 2026-11-21
 Modo: B, automático (parte: tarea 8.1, el índice y sus tests).
 Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
 Objetivo del PR: acelerar las consultas de `analysis_runs` con un índice por candidato y demostrarlo con el plan de consulta y con el test amarillo Y4, antes y después.
@@ -425,3 +425,41 @@ Límites:
 - Las bases de datos que ya existían reciben el índice la próxima vez que arranca la app (`CREATE INDEX IF NOT EXISTS`); con muchos datos, crearlo la primera vez puede tardar.
 - El `EXPLAIN QUERY PLAN` de los 3 tests corre sobre una base recién creada, sin las 10.000 filas. Con esas filas solo medí tiempos, no volví a pedir el plan.
 - No hice revisión en modo C. En una tarea verde el control es el que queda arriba.
+
+---
+
+## Entrada 9 · ci/quality-gates · PR #12 · 2026-11-21
+Modo: B, automático (partes: el job de auditoría de dependencias y el umbral de cobertura), con la prueba de que el job falla hecha por mí.
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: dos controles nuevos en el CI: un job que falla si alguna dependencia tiene una vulnerabilidad conocida, y un mínimo de cobertura del 80 % en el CI y en `make check`.
+
+Criterios que definí antes de pedir el código:
+- La tarea 9.1 estaba en verde, salvo el paso 2, que es rojo y lo hago yo. El job y el umbral los escribe la IA, pasa `make check` y hace el commit, con su firma. Esa parte no la partí en pausas.
+- No añadí criterios míos. Los que ya valían: un job `dependency-audit` con `pip-audit` sobre `requirements.txt` y `requirements-dev.txt`, sin cambiar los otros jobs.
+- `--cov-fail-under=80` entra solo si las tres últimas ejecuciones del CI están en 80 % o más. La decisión es mía, y las tres lo estaban.
+- La prueba de que el job se pone rojo es mía, en otra rama, y esa rama no se fusiona.
+
+Prompts relevantes (traducidos del inglés):
+1. "Ya actualicé la rama. Haz la tarea 9.1 y para en el paso 2."
+2. "Añade `--cov-fail-under=80` al pytest del CI y de `make check`, sin tocar los ficheros de dependencias. Enséñame que con un 99 % falla en local, pasa `make check` y, si está en verde, haz el commit."
+
+Qué generó la IA:
+- En `.github/workflows/ci.yml`, el job `dependency-audit`, que ejecuta `pip-audit -r requirements.txt -r requirements-dev.txt`, y `--cov-fail-under=80` en el pytest de `lint-and-test`.
+- En el `Makefile`, el mismo umbral en `make check` y un objetivo nuevo, `make audit`.
+- Commit `5691cb6`, hecho por la IA, con su firma, por ser una tarea verde.
+
+Cómo lo verifiqué:
+- `pip-audit` en local no encontró vulnerabilidades en el conjunto completo de dependencias.
+- Abrí la pull request #11 desde `throwaway/audit-check`, con `pyyaml==5.3.1` añadido a `requirements.txt`. `dependency-audit` se puso en rojo. `lint-and-test` y `performance` siguieron en verde. La cerré sin fusionarla y borré la rama.
+- La cobertura de las tres últimas ejecuciones del CI era de al menos el 80 % (la última, 97 %).
+- En local, `pytest --cov=app --cov-fail-under=99` falla ("Required test coverage of 99% not reached. Total coverage: 97.40%"), y `make check` pasa con el umbral del 80 %.
+- Revisión de la IA (modo C): no hecha. La parte verde se comprueba con `make check`, y el job con la pull request desechable.
+
+Qué corregí a mano y por qué:
+- Nada en `ci.yml` ni en el `Makefile`. No cambié ese encargo: la IA lo escribió y lo commiteó en `5691cb6`.
+- La prueba en rojo la hice yo, a mano, como queda arriba. Esa rama no entra en este commit.
+
+Límites:
+- `pip-audit` solo avisa de vulnerabilidades ya publicadas. Una dependencia mala sin aviso conocido pasa el job.
+- El 80 % queda lejos del 97 % actual. Una bajada pequeña no hace fallar el CI.
+- Esta pull request todavía no está abierta, así que aún no he visto el job y el umbral en verde sobre la rama buena.
