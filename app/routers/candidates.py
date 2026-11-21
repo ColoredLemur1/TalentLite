@@ -83,6 +83,15 @@ def analyze_candidate(
         job_title=body.job_title,
         required_skills=body.required_skills,
     )
+    # Every outcome is recorded, failed or succeeded, before anything is returned:
+    # the reference in a 502/504 always points to a stored row.
+    insert_analysis_run(
+        conn,
+        candidate_id=candidate_id,
+        job_title=body.job_title,
+        required_skills=body.required_skills,
+        outcome=outcome,
+    )
     if outcome.result is None:
         logger.warning(
             "analysis_failed candidate_id=%s error_code=%s attempts=%s reference=%s",
@@ -96,11 +105,4 @@ def analyze_candidate(
             outcome.error_code,
             reference=outcome.reference,
         )
-    insert_analysis_run(
-        conn,
-        candidate_id=candidate_id,
-        job_title=body.job_title,
-        required_skills=body.required_skills,
-        outcome=outcome,
-    )
     return outcome.result
