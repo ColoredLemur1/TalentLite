@@ -22,7 +22,11 @@ ERROR_MESSAGES: dict[str, str] = {
     "llm_timeout": "The analysis model timed out.",
 }
 
-HTTP_ERROR_CODES: dict[int, str] = {404: "not_found", 405: "method_not_allowed"}
+HTTP_ERROR_CODES: dict[int, str] = {
+    404: "not_found",
+    405: "method_not_allowed",
+    413: "payload_too_large",
+}
 
 
 def new_reference() -> str:
