@@ -83,3 +83,34 @@ Qué corregí a mano y por qué:
 - No corregí código. Revisé uno a uno los 8 archivos generados, que son sobre todo el esqueleto de la aplicación.
 
 Límites: el CI solo prueba Python 3.13 en Linux; el test de humo solo comprueba que el paquete `app` se importa.
+
+---
+
+## Entrada 2 · chore/repo-conventions · PR #2 · 2026-11-21
+Modo: B, delegado (partes: borradores de las reglas del agente, la plantilla de PR y la cabecera del registro), con mi revisión y edición antes del commit.
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor.
+Objetivo del PR: fijar las convenciones del repositorio: reglas para el agente (`AGENTS.md`), plantilla de PR en español y la cabecera de este registro (reglas, modos, niveles de riesgo y plantilla de entrada).
+
+Criterios que definí antes de pedir el código:
+- Reglas cortas y comprobables para el agente: una línea por regla, sin reglas inventadas fuera de las acordadas.
+- `AGENTS.md` en inglés; la plantilla de PR y este registro, en español.
+- La plantilla de PR con las mismas secciones que usé en el PR #1, para que todos los PR se vean iguales.
+
+Prompts relevantes (resumidos y traducidos del inglés):
+1. "Explícame la rama 2: los pasos y cómo trabajamos según el nivel de riesgo."
+2. "Redacta los borradores a partir del Apéndice A del plan."
+3. "Explica brevemente al principio del registro los niveles verde, amarillo y rojo."
+
+Qué generó la IA: borradores de `AGENTS.md` (8 reglas, en inglés), `.github/pull_request_template.md` (secciones Qué, Por qué, Cómo lo probé y Uso de IA) y la cabecera de `AI_LOG.md`. Sin código ni tests. El commit `81545d8` lo hice yo.
+
+Cómo lo verifiqué:
+- `make check` sigue en verde (`1 passed`); esta rama no toca código.
+- Al abrir el PR, la descripción se rellenó sola con las secciones de la plantilla.
+- Sin bug a ciegas ni revisión de la IA (modo C): son solo documentos.
+
+Qué corregí a mano y por qué:
+- `AGENTS.md` (regla 8) y las reglas del registro: permití la firma `Co-Authored-By` de la IA en los commits de las tareas verdes, porque esos commits los hace la IA y así queda claro en el propio historial.
+- Quité el borrador de la Entrada 0 (planificación): prefiero escribirla yo al final del proyecto, con tiempo.
+- Quité la línea "Review en el PR" de la plantilla de entrada: los comentarios ya están en GitHub y no quiero repetirlos aquí.
+
+Límites: las reglas de `AGENTS.md` dependen de que el agente las siga; solo la de `.env` está reforzada con un bloqueo en la configuración local del agente.
