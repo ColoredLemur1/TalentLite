@@ -21,10 +21,6 @@ class EchoBody(BaseModel):
 def app(settings):
     app = create_app(settings)
 
-    @app.get("/_test/ping")
-    def ping():
-        return {"ok": True}
-
     @app.post("/_test/echo")
     def echo(body: EchoBody):
         return body
@@ -71,33 +67,33 @@ def test_every_route_with_right_key_is_not_401(app, client):
 
 
 def test_key_with_different_case_returns_401(anon_client):
-    r = anon_client.get("/_test/ping", headers={"X-API-Key": TEST_API_KEY.upper()})
+    r = anon_client.get("/health", headers={"X-API-Key": TEST_API_KEY.upper()})
     assert r.status_code == 401
 
 
 def test_key_prefix_of_real_key_returns_401(anon_client):
-    r = anon_client.get("/_test/ping", headers={"X-API-Key": TEST_API_KEY[:42]})
+    r = anon_client.get("/health", headers={"X-API-Key": TEST_API_KEY[:42]})
     assert r.status_code == 401
 
 
 def test_empty_key_header_returns_401(anon_client):
-    r = anon_client.get("/_test/ping", headers={"X-API-Key": ""})
+    r = anon_client.get("/health", headers={"X-API-Key": ""})
     assert r.status_code == 401
 
 
 def test_non_ascii_key_returns_401_not_500(anon_client):
-    r = anon_client.get("/_test/ping", headers={"X-API-Key": "clave-ñ".encode()})
+    r = anon_client.get("/health", headers={"X-API-Key": "clave-ñ".encode()})
     assert r.status_code == 401
 
 
 def test_401_body_identical_for_missing_and_wrong_key(anon_client):
-    missing = anon_client.get("/_test/ping")
-    wrong = anon_client.get("/_test/ping", headers={"X-API-Key": WRONG_KEY})
+    missing = anon_client.get("/health")
+    wrong = anon_client.get("/health", headers={"X-API-Key": WRONG_KEY})
     assert missing.json() == wrong.json()
 
 
 def test_401_body_does_not_echo_sent_key(anon_client):
-    r = anon_client.get("/_test/ping", headers={"X-API-Key": WRONG_KEY})
+    r = anon_client.get("/health", headers={"X-API-Key": WRONG_KEY})
     assert "wrong-" not in r.text
 
 
@@ -123,8 +119,8 @@ def test_path_starting_like_docs_still_requires_key(anon_client):
 
 def test_api_key_never_appears_in_logs(client, anon_client, caplog):
     with caplog.at_level(logging.DEBUG):
-        client.get("/_test/ping")
-        anon_client.get("/_test/ping", headers={"X-API-Key": WRONG_KEY})
+        client.get("/health")
+        anon_client.get("/health", headers={"X-API-Key": WRONG_KEY})
     assert TEST_API_KEY not in caplog.text
     assert WRONG_KEY not in caplog.text
 
@@ -138,7 +134,7 @@ def test_auth_uses_compare_digest(client, monkeypatch):
         return real_compare_digest(a, b)
 
     monkeypatch.setattr(secrets, "compare_digest", spy)
-    client.get("/_test/ping")
+    client.get("/health")
     assert len(calls) == 1
     provided, expected = calls[0]
     assert isinstance(provided, bytes)
