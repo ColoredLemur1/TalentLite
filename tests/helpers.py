@@ -1,8 +1,51 @@
+import json
 import re
+import time
 
 from fastapi import FastAPI
 
 TEST_API_KEY = "test-key-" + "k" * 34
+
+
+class ScriptedLLM:
+    """A fake model that returns, or raises, the next scripted output on each call.
+
+    Once the script runs out, it repeats the last output.
+    """
+
+    provider = "scripted"
+    model = "scripted-v0"
+
+    def __init__(self, outputs: list[str | Exception], delay_s: float = 0.0) -> None:
+        if not outputs:
+            raise ValueError("ScriptedLLM needs at least one output")
+        self._outputs = list(outputs)
+        self.delay_s = delay_s
+        self.calls = 0
+        self.prompts: list[tuple[str, str]] = []
+
+    def complete(self, system: str, user: str) -> str:
+        self.prompts.append((system, user))
+        output = self._outputs[min(self.calls, len(self._outputs) - 1)]
+        self.calls += 1
+        if self.delay_s:
+            time.sleep(self.delay_s)
+        if isinstance(output, Exception):
+            raise output
+        return output
+
+
+def valid_output(**overrides) -> str:
+    """A valid model answer as JSON text; any field can be overridden."""
+    return json.dumps(
+        {
+            "skills": ["python"],
+            "years_experience": 3,
+            "summary": "Resumen.",
+            "match_score": 50,
+            **overrides,
+        }
+    )
 
 
 def candidate_payload(**overrides) -> dict:
