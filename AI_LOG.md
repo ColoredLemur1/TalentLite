@@ -284,3 +284,56 @@ Límites:
 - El test amarillo no pone un tope. El tope de 3 intentos ya está en el servicio, y solo se reintenta una salida inválida. Y3 mide el coste. Tampoco limita cuántas veces se puede pedir un análisis: el endpoint llega en la rama 6.
 - La llamada real no pasó por HTTP. La hice con un script que llama a `run_analysis`. El aviso de Starlette desapareció porque el SDK instaló `httpx2` y el cliente de tests lo usa. `httpx==0.28.1` sigue fijado en las dependencias de desarrollo.
 - El nivel gratuito puede usar los prompts para mejorar los productos de Google. Por eso el CV era inventado.
+
+---
+
+## Entrada 6 · feat/candidate-analysis · PR #6 · 2026-11-21
+Modo: A, supervisión cercana (partes: tareas 6.1 y 6.2, por partes pequeñas con una pausa tras cada una).
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: conectar el análisis con la API: guardar cada análisis en la tabla `analysis_runs`, añadir `POST /candidates/{id}/analyze` y mostrar el último análisis en `GET /candidates/{id}`.
+
+Criterios que definí antes de pedir el código:
+-Si `insert_analysis_run` recibe un fallo, `result` queda vacío. El endpoint de esta rama no la llama en ese caso.
+- El último análisis correcto es el de `created_at` más reciente y, si empatan, el de `id` mayor. Solo cuenta ese candidato. Una referencia repetida la rechaza la base de datos.
+- La oferta se limpia antes de medir y antes de buscar duplicados. El título tiene de 1 a 200 caracteres y las skills son de 1 a 30, cada una de 1 a 50. `["Python", " python "]` se rechaza. Un campo de más también.
+- El candidato se carga antes de llamar al modelo. Si no existe, la respuesta es 404 y el modelo no se llama. El CV sale de la fila guardada, no del cuerpo. Los ids `0` y `2**63` dan 422, igual que en el GET.
+- Si el análisis falla no se guarda ninguna fila. Una salida inválida o un proveedor caído dan 502, y un timeout da 504. El cuerpo lleva solo el código, el mensaje fijo y la referencia. El log es `warning`, con el id, el código, los intentos y la referencia.
+- `latest_analysis` son solo los 4 campos del último resultado correcto, o `null`. No salen el proveedor, el modelo, los intentos, la referencia ni `error_detail`.
+
+Prompts relevantes (traducidos del inglés):
+1. "La tabla sigue el plan: sin columna del CV, `reference` única, `status` solo `succeeded` o `failed` y `candidate_id` apuntando a `candidates`. Las skills y el resultado se guardan como JSON, todo va con placeholders `?` y un análisis fallido guarda el resultado vacío."
+2. "La fecha de cada análisis sale de `utc_now_iso()` de `app.db`, para que los tests de empate puedan sustituirla."
+3. "El último análisis es: `SELECT result FROM analysis_runs WHERE candidate_id = ? AND status = 'succeeded' ORDER BY created_at DESC, id DESC LIMIT 1`, devuelto tal cual o `null`."
+4. "En la oferta, el título y cada skill se limpian de espacios antes de comprobar la longitud y los duplicados: `["Python", " python "]` se rechaza."
+5. "Carga primero el candidato: si no existe, 404 antes de llamar al modelo. El CV sale de la base de datos y la oferta ya limpia va al modelo."
+6. "Si el análisis falla no se guarda nada: respuesta inválida o proveedor caído dan 502, timeout da 504, y el cuerpo lleva solo el código, el mensaje fijo y la referencia. El log es exactamente `analysis_failed candidate_id=… error_code=… attempts=… reference=…`, con nivel warning."
+7. "`latest_analysis` en el GET tiene solo los 4 campos del resultado, o `null`; nada de proveedor, modelo, intentos, referencia ni `error_detail`."
+
+Qué generó la IA:
+- Código: en `app/db.py`, la tabla `analysis_runs`, `insert_analysis_run`, `LATEST_SUCCEEDED_SQL` y `get_latest_succeeded_result`; en `app/schemas.py`, `AnalyzeRequest` y el tipo real de `latest_analysis`; en `app/routers/candidates.py`, el endpoint de análisis y el último análisis en el GET; y `offer_payload` en `tests/helpers.py`.
+- Tests: 24 escritos por la IA (3 de almacenamiento y 21 del endpoint). Los otros 6 de esta rama los escribí yo.
+- Commits `e0a9c94` y `2f57e80`, hechos por mí.
+
+Cómo lo verifiqué:
+- En cada tarea vi los tests en rojo antes de implementar y en verde después.
+- `make check` en verde: 175 tests y 97 % de cobertura (100 % en el router de candidatos y en los esquemas).
+- Con un script aparte comprobé que la base de datos rechaza por sí misma una referencia repetida, un análisis de un candidato que no existe y un `status` distinto de `succeeded` o `failed`, y que tras cada rechazo no queda ninguna fila a medias.
+- Comprobé las tres respuestas de error (502, 504 y 502) y sus líneas de log: solo llevan códigos, ids y la referencia, y no se guarda ninguna fila.
+- Un candidato que no existe da 404 sin llamar al modelo (`llm.calls == 0`), y un id fuera de rango da 422 también sin llamarlo.
+- El test del límite conocido muestra que una puntuación manipulada pero válida (100 en vez de 90) se acepta; queda documentado y enlazado al Issue de contraste de skills.
+- Al mover mis tres tests al fichero correcto, la IA dejó fuera la última línea (no tenía salto de línea final); lo vio enseguida y la restauró tal cual.
+- Revisión de la IA (modo C): no hecha. La revisión de esta rama fueron las pausas de cada parte.
+
+Qué corregí a mano y por qué:
+- No reescribí el router ni la base de datos a mano. Paré en cada pausa y cambié el encargo, y además escribí 6 tests yo:
+- En `tests/unit/test_db.py`: el de la fecha más nueva frente al id más alto, el de que un candidato no ve el análisis de otro, y el de la referencia repetida. Los tres cubren reglas que los tests del plan no fijaban.
+- En `tests/integration/test_analyze_api.py`: el de los ids `0` y `2**63` sin llamar al modelo, el duplicado después de quitar espacios, y el de que la oferta se guarda ya limpia. Los pegué primero en el fichero de la base de datos; la IA los movió tal cual al fichero del endpoint.
+- Ejecuté `ruff format` yo en esos dos ficheros de tests. Solo cambia el formato, no lo que comprueban.
+- El log de un análisis fallido se queda en `warning`. `error` queda para una excepción no controlada, e `info` para un hecho normal como crear un candidato.
+
+Límites:
+- Esta rama no guarda los análisis fallidos. Un 502 o un 504 no deja fila, así que la referencia todavía no se puede buscar en la base de datos. Eso llega en la rama 7.
+- Una puntuación válida pero equivocada se acepta y el GET la devuelve. El test del 100 en el CV malicioso lo documenta y apunta al Issue 2. Ni la validación ni el GET vuelven a calcular la rúbrica.
+- No probé una fila de resultado dañada. `model_validate` haría fallar el GET en vez de devolver un análisis a medias.
+- `casefold()` trata `ß` y `ss` como la misma skill. No hay un test con ese par. Con los nombres normales el resultado es el de pasar a minúsculas.
+- No hay un tope de cuántas veces se puede llamar a `POST /candidates/{id}/analyze`. Cada petición válida de un candidato que existe llama al modelo.
