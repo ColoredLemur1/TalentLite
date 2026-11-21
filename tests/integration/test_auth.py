@@ -3,29 +3,10 @@
 import logging
 import secrets
 
-import pytest
-from pydantic import BaseModel
-
 from app.auth import DOCS_PATHS
-from app.main import create_app
 from tests.helpers import TEST_API_KEY, api_routes
 
 WRONG_KEY = "wrong-" + "k" * 40
-
-
-class EchoBody(BaseModel):
-    value: str
-
-
-@pytest.fixture
-def app(settings):
-    app = create_app(settings)
-
-    @app.post("/_test/echo")
-    def echo(body: EchoBody):
-        return body
-
-    return app
 
 
 def _failures(client, app, expected_status, headers=None):
