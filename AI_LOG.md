@@ -463,3 +463,49 @@ Límites:
 - `pip-audit` solo avisa de vulnerabilidades ya publicadas. Una dependencia mala sin aviso conocido pasa el job.
 - El 80 % queda lejos del 97 % actual. Una bajada pequeña no hace fallar el CI.
 - Esta pull request todavía no está abierta, así que aún no he visto el job y el umbral en verde sobre la rama buena.
+---
+
+## Entrada 10 · build/docker · PR #13 · 2026-11-21
+Modo: B, delegado con un punto de control (parte: tarea 10.1, los tres ficheros de Docker). Las comprobaciones con mi `.env` real las hice yo.
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: empaquetar la app para arrancarla solo con Docker: una imagen con usuario sin privilegios y la base de datos en un volumen que sobrevive a los reinicios.
+
+Criterios que definí antes de pedir el código:
+- La tarea 10.1 estaba en amarillo: la IA escribe los tres ficheros de una vez y se para en el punto de control. Las comprobaciones con mi `.env` y el commit los hago yo.
+- El puerto publicado es `127.0.0.1:8000:8000`. Las pruebas usan `localhost`, y `/docs` responde sin clave, así que el puerto no queda abierto en el resto de la red.
+- No añadí `PYTHONUNBUFFERED` ni `PYTHONDONTWRITEBYTECODE`. No están en el plan, y el error del paso 5 se lee igual en los logs.
+- El resto es el que ya valía: imagen fijada por el digest de M12, solo `requirements.txt` y `app/`, sin `COPY . .`, `appuser` dueño de `/data`, `USER` antes de `CMD`, `--factory`, y el volumen en `/data`.
+
+Prompts relevantes (traducidos del inglés):
+1. "Escribe el `Dockerfile`, el `docker-compose.yml` y el `.dockerignore`, y para en el punto de control. No leas mi `.env`, no hagas las comprobaciones con él y no hagas commit."
+2. "El `Dockerfile` parte de `python:3.13-slim` fijado por el digest multiplataforma del paso M12, nunca por la etiqueta. Instala solo `requirements.txt`, copiado antes que `app/`, y copia solo `app/`: nada de `COPY . .`. Crea `appuser` y `/data` con ese dueño, y `USER appuser` va antes de `CMD`. El `CMD` es `uvicorn app.main:build_app --factory --host 0.0.0.0 --port 8000`."
+3. "En el `docker-compose.yml`, publica el puerto solo en mi ordenador (`127.0.0.1:8000:8000`), usa `env_file: .env`, fuerza `DATABASE_PATH=/data/talentlite.db`, monta el volumen `talentlite_data` en `/data` y pon `restart: unless-stopped`."
+4. "No añadas `PYTHONUNBUFFERED` ni `PYTHONDONTWRITEBYTECODE`."
+5. "Cambia `__pycache__` por `**/__pycache__` en el `.dockerignore`, y deja el resto igual."
+
+Qué generó la IA:
+- `Dockerfile`: imagen fijada por digest, dependencias de producción antes que el código, solo `app/` copiado, `appuser` con su carpeta `/data` y `USER appuser` antes de `CMD`.
+- `docker-compose.yml`: el servicio `api`, el puerto en `127.0.0.1`, `.env` pasado en tiempo de ejecución, `DATABASE_PATH` forzado, el volumen y la política de reinicio.
+- `.dockerignore`: `.env`, `.git`, `.venv`, `**/__pycache__`, `*.db`, `.github` y `tests`.
+- Antes de que yo empezara las comprobaciones, la IA repasó cinco puntos del `Dockerfile` y del compose (que `.env` no entra en la imagen, `USER` antes de `CMD`, `/data` con el dueño correcto, el volumen igual que `DATABASE_PATH`, y `--factory`) y avisó de que `__pycache__` solo ignoraba la carpeta raíz, no las de `app/`. Esas carpetas llevan la ruta de mi ordenador dentro.
+- Commit `a5ec663`, hecho por mí, sin la firma de la IA.
+
+Cómo lo verifiqué:
+- `make check` en verde: 203 tests y 97 % de cobertura. Esta rama no cambia código de la app.
+- Arranqué la app con `docker compose up --build -d` con mi `.env` real: con la clave, `/health` responde `{"status":"ok"}`; sin ella, 401.
+- Dentro del contenedor, el usuario no es root y `/app` no tiene `.env`, `tests` ni `.git`.
+- Los datos persisten: creé un candidato y lo recuperé después de `docker compose restart` y de `docker compose down` seguido de `up -d`.
+- Con `API_KEY=cambia-esto` el proceso sale con `API_KEY is still the placeholder from .env.example.` y no imprime la clave. Compose lo vuelve a arrancar hasta que hago `docker compose down`.
+- Repetí la comprobación desde un clon limpio de la rama `build/docker`, para confirmar que la imagen no depende de nada que solo exista en mi ordenador.
+- Revisión de la IA (modo C): no hecha. La revisión de esta rama fue el punto de control, y las comprobaciones del contenedor las hice yo.
+
+Qué corregí a mano y por qué:
+- No reescribí el `Dockerfile` ni el `docker-compose.yml`.
+- Tras el punto de control pedí un solo cambio: en `.dockerignore`, `__pycache__` pasó a `**/__pycache__`. La línea suelta no ignoraba las carpetas de dentro de `app/`, y esos `.pyc` guardan la ruta de mi ordenador. El cambio lo escribió la IA.
+- Las comprobaciones de los pasos 2 a 5, también en un clon limpio, y el commit `a5ec663` los hice yo. Al ser amarillo, el commit no lleva la firma de la IA.
+
+Límites:
+- Lo probé en mi Mac. El CI no construye la imagen.
+- `env_file: .env` mete todo el fichero en el contenedor en marcha, también una clave de Gemini si estuviera. No queda en la imagen.
+- Con `restart: unless-stopped`, una clave mala reinicia el contenedor hasta que se hace `docker compose down`.
+- El puerto solo escucha en este ordenador. Desde otra máquina de la red no se llega a la API.
