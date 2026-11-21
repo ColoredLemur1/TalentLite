@@ -10,7 +10,7 @@ from app.errors import CatchAllErrorMiddleware, register_exception_handlers
 from app.llm.base import LLMClient
 from app.llm.factory import make_llm
 from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
-from app.routers import candidates, health
+from app.routers import audit, candidates, health
 
 
 def create_app(settings: Settings, llm: LLMClient | None = None) -> FastAPI:
@@ -30,6 +30,7 @@ def create_app(settings: Settings, llm: LLMClient | None = None) -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(candidates.router)
+    app.include_router(audit.router)
     # The last middleware added is the outermost:
     # security headers, then catch-all, then auth, then body limit, then the app.
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes)

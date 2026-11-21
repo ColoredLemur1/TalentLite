@@ -156,3 +156,23 @@ def get_latest_succeeded_result(
     """The newest succeeded result (4 fields, as stored), or None if there is none."""
     row = conn.execute(LATEST_SUCCEEDED_SQL, (candidate_id, "succeeded")).fetchone()
     return None if row is None else json.loads(row["result"])
+
+
+# The 13 audit columns. error_detail is deliberately absent, and there is no CV column.
+AUDIT_PAGE_SQL = (
+    "SELECT id, created_at, job_title, required_skills, status, result, error_code, "
+    "provider, model, prompt_version, attempts, duration_ms, reference "
+    "FROM analysis_runs WHERE candidate_id = ? "
+    "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+)
+AUDIT_COUNT_SQL = "SELECT COUNT(*) FROM analysis_runs WHERE candidate_id = ?"
+
+
+def list_analysis_runs(
+    conn: sqlite3.Connection, candidate_id: int, limit: int, offset: int
+) -> list[sqlite3.Row]:
+    return conn.execute(AUDIT_PAGE_SQL, (candidate_id, limit, offset)).fetchall()
+
+
+def count_analysis_runs(conn: sqlite3.Connection, candidate_id: int) -> int:
+    return conn.execute(AUDIT_COUNT_SQL, (candidate_id,)).fetchone()[0]
