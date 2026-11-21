@@ -7,11 +7,13 @@ from app.auth import ApiKeyMiddleware, api_key_header
 from app.config import Settings, load_settings
 from app.db import init_db
 from app.errors import CatchAllErrorMiddleware, register_exception_handlers
+from app.llm.base import LLMClient
+from app.llm.factory import make_llm
 from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import candidates, health
 
 
-def create_app(settings: Settings) -> FastAPI:
+def create_app(settings: Settings, llm: LLMClient | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         init_db(settings.database_path)
@@ -23,6 +25,8 @@ def create_app(settings: Settings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    # Tests inject a scripted model; otherwise the provider comes from the settings.
+    app.state.llm = llm if llm is not None else make_llm(settings)
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(candidates.router)
