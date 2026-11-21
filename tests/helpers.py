@@ -72,6 +72,11 @@ def candidate_payload(**overrides) -> dict:
     }
 
 
+def offer_payload(**overrides) -> dict:
+    """A valid job offer for POST /candidates/{id}/analyze; any field can be overridden."""
+    return {"job_title": OFFER_TITLE, "required_skills": OFFER_SKILLS, **overrides}
+
+
 def api_routes(app: FastAPI) -> list[tuple[str, str]]:
     """Every (path, method) in the app's OpenAPI document, with each {param} replaced by "1".
 
