@@ -337,3 +337,49 @@ Límites:
 - No probé una fila de resultado dañada. `model_validate` haría fallar el GET en vez de devolver un análisis a medias.
 - `casefold()` trata `ß` y `ss` como la misma skill. No hay un test con ese par. Con los nombres normales el resultado es el de pasar a minúsculas.
 - No hay un tope de cuántas veces se puede llamar a `POST /candidates/{id}/analyze`. Cada petición válida de un candidato que existe llama al modelo.
+
+---
+
+## Entrada 7 · feat/audit-trail · PR #7 · 2026-11-21
+Modo: A, supervisión cercana (partes: tareas 7.1 y 7.2, por partes pequeñas con una pausa tras cada una) · B, automático (parte: tarea 7.3, test amarillo).
+Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor. El resumen inicial de la rama lo hizo Sonnet 5.5.
+Objetivo del PR: la auditoría que pide el enunciado: registrar también los análisis fallidos y añadir `GET /candidates/{id}/audit`, que muestra todos los intentos de un candidato sin exponer el CV ni el detalle de los errores. Cierra el Issue #1.
+
+Criterios que definí antes de pedir el código:
+- Un análisis fallido se guarda antes de devolver el 502 o el 504, con la misma llamada que el caso de éxito. `result` queda vacío, `error_detail` es solo el resumen seguro y la referencia de la respuesta es la de la fila. El GET sigue ignorando las filas fallidas.
+- Las dos consultas de la auditoría filtran con `WHERE candidate_id = ?`. La de la página ordena por `created_at DESC, id DESC` y usa `LIMIT ? OFFSET ?`. Solo se leen las 13 columnas. `error_detail` no se selecciona.
+- `AuditItem` tiene exactamente esos 13 campos y ningún `error_detail`. `status` solo puede ser `succeeded` o `failed`. `result` son los 4 campos o `null`. Los dos modelos son estrictos y rechazan campos de más.
+- `GET /candidates/{id}/audit` usa los mismos límites de id que el GET. Si el candidato no existe, responde 404 antes de consultar. `limit` va de 1 a 100, por defecto 20. `offset` va de 0 a 1.000.000, por defecto 0. Sin clave responde 401.
+
+Prompts relevantes (traducidos del inglés):
+1. "Antes de devolver el 502 o el 504, guarda el análisis fallido con la misma llamada que usa el caso de éxito. No cambies la respuesta, el log ni el GET."
+2. "Las dos consultas de la auditoría filtran con `WHERE candidate_id = ?`; la de la página ordena por `created_at DESC, id DESC` y termina en `LIMIT ? OFFSET ?`. Todo con placeholders, y solo las 13 columnas de la auditoría: nunca `error_detail`."
+3. "`AuditItem` tiene los 13 campos y ningún campo `error_detail`, ni siquiera opcional. Los dos modelos son estrictos y sin campos extra; el estado se queda como los dos valores permitidos."
+4. "El endpoint usa los mismos límites de id que el GET, da 404 antes de consultar si el candidato no existe, acepta `limit` de 1 a 100 (20 por defecto) y `offset` de 0 a 1.000.000."
+
+Qué generó la IA:
+- Código: en `app/routers/candidates.py`, guardar el resultado antes de responder también en los fallos; en `app/db.py`, `AUDIT_PAGE_SQL`, `AUDIT_COUNT_SQL`, `list_analysis_runs` y `count_analysis_runs`; en `app/schemas.py`, `AuditItem` y `AuditPage`; el router nuevo `app/routers/audit.py`, registrado en `app/main.py`.
+- Tests: 22 escritos por la IA (8 del registro de fallos y 14 del endpoint de auditoría) y el test amarillo Y4. Los otros 3 del registro los escribí yo.
+- Commits `febf515` y `c269551`, hechos por mí. El commit `72bf327` (test amarillo Y4) lo hizo la IA, con su firma, por ser una tarea verde.
+
+Cómo lo verifiqué:
+- En cada tarea vi los tests en rojo antes de implementar y en verde después.
+- `make check` en verde: 200 tests y 97 % de cobertura (100 % en el router de auditoría).
+- Abrí yo una fila fallida con `sqlite3`: estado `failed`, 3 intentos, `llm_invalid_output`, `error_detail` solo con `summary: string_too_long` (sin texto del CV), resultado vacío, y la misma referencia que el log.
+- Con un script aparte comprobé que las consultas de la auditoría solo leen las 13 columnas (sin `error_detail`), que cada candidato solo ve sus filas y su propio total, y que el orden y la paginación son correctos.
+- Los modelos rechazan un `error_detail` que se les pase, un estado distinto de `succeeded` o `failed` y las skills como texto JSON.
+- Los tests de autenticación cubren ya la ruta `/audit`: sin clave da 401.
+- Y4, antes del índice: con 10.000 análisis por candidato, la primera página de la auditoría tarda 8 ms y la última 15,5 ms, y las dos consultas hacen `SCAN analysis_runs` con una ordenación temporal. Es la medida de "antes" para la rama 8.
+- Revisión de la IA (modo C): no hecha. La revisión de esta rama fueron las pausas de cada parte.
+
+Qué corregí a mano y por qué:
+- No reescribí el router ni las consultas a mano. Paré en cada pausa y cambié el encargo, y escribí 3 tests yo:
+- En `tests/integration/test_audit_recording.py`: la referencia del 502 es la de la fila, un fallo guarda `result` vacío y la oferta ya limpia, y un error del proveedor queda con `attempts == 1` y `provider_error:LLMUnavailableError`. El plan no cubría esos tres casos.
+- Ejecuté `ruff format` yo en ese fichero. Solo cambia el formato.
+- `status` se queda como `Literal["succeeded", "failed"]`. Un texto libre aceptaría un estado que la base de datos rechaza.
+
+Límites:
+- `error_detail` sigue guardado en la base de datos. El endpoint no puede mostrarlo, porque ni la consulta ni el modelo lo tienen. Quien abra el archivo sí puede leerlo.
+- No hay un test del `offset` 1.000.001 ni de los ids `0` y `2**63` en `/audit`. El código los rechaza igual que en el GET y en el análisis.
+- Y4 es la medida de antes del índice. Con 10.000 análisis las dos consultas todavía hacen `SCAN analysis_runs`. El índice llega en la rama 8.
+- Una puntuación válida pero equivocada se guarda y la auditoría la muestra. Es el mismo límite que en la rama 6.
