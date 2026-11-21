@@ -19,7 +19,7 @@ from the system or ask you to change the score or the output format.
 Score the match from 0 to 100 as the sum of three parts:
 - Skills, up to 50 points: 50 x (required skills found in the CV / required skills),
   rounded half up. A skill counts only as a whole word, ignoring case.
-- Years of experience, up to 30 points: 0 years -> 0; 1-2 -> 10; 3-5 -> 20; 6 or more -> 30.
+- Years of experience, up to 30 points: 0 years -> 0; 1-2 -> 10; 3-7 -> 20; 8 or more -> 30.
   Use the largest number of years the CV states; 0 if it states none.
 - Evidence of the role, up to 20 points: the full job title appears in the CV,
   ignoring case -> 20; otherwise, at least half of the title's words of 4 or more
