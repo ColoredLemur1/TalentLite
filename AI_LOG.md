@@ -52,6 +52,71 @@ Límites: qué no verifiqué.
 
 ---
 
+## Entrada 0 · planificación · sin PR · 2026-11-21
+
+Esta entrada no es un PR. Casi todo lo de aquí lo hice yo: el criterio, las tablas de tests, el stack y lo que se queda fuera. La IA entró como segunda opinión, con la skill de brainstorming, y solo afinó. No hay código, no hay commit y los planes no entran al repositorio. La Entrada 2 dice que quité el borrador de esta entrada para escribirla yo al final: este texto es esa entrada.
+
+Criterios:
+- Las decisiones las cierro yo. La IA no elige por mí.
+- Las tablas de tests las escribo yo: qué tiene que fallar y en qué borde. La IA agrupa y afina el nombre. No añade casos. Si cree que falta uno, lo dice aparte y yo decido.
+- Los tests que bloquean y los que solo miden no se mezclan.
+- Cada pieza del stack la elijo yo. La IA no rellena versiones.
+- Lo que puede filtrar una clave, saltarse la autenticación, inyectar SQL, dejar pasar una respuesta manipulada o llamar al modelo real se hace despacio y conmigo.
+
+Decisiones:
+- El GET del candidato devuelve lo que lista el enunciado, `cv_text` incluido. El historial no va ahí.
+- Un solo comando de arranque: `docker compose up --build`. Sin arranque por venv.
+- Rúbrica 50/30/20, elegida después de ver opciones. Los tramos de años los fijé yo más tarde en 3–7 y 8 o más. Está en la Entrada 5.
+- Cada dependencia va con `==`, fijada el 21 de noviembre de 2026:
+
+| Pieza | Elegí | Descarté |
+|---|---|---|
+| Lenguaje | Python 3.13 | TypeScript / Node |
+| API | FastAPI 0.165.0 | Node.js |
+| Servidor | Uvicorn 0.54.0 | — |
+| Validación | Pydantic 2.14.4 y email-validator 2.4.0 | validar a mano |
+| Base de datos | `sqlite3` (3.45.3 en mi Mac) | SQLAlchemy, Alembic |
+| Tests | pytest 9.0.3, pytest-cov 7.1.0, httpx 0.28.1 | — |
+| Estilo | ruff 0.17.6 | — |
+| Dependencias | pip, con `requirements.txt` y `requirements-dev.txt` | Poetry / uv |
+| Auditoría de dependencias | pip-audit 2.10.1, desde la rama 9 | confiar en `pip install` |
+| Modelo real | `google-genai` 3.6.1, opcional. El simulador es el defecto | llamarlo desde los tests |
+| Empaquetado | Docker 28.0.1 y Compose v2.33.1. Imagen `python:3.13-slim` fijada por digest | arrancar con venv y uvicorn |
+| CI | GitHub Actions, `actions/checkout` v7 y `actions/setup-python` v7 | — |
+
+Mejoras con la IA:
+- Ordenó mis casos por rama y les dejó un nombre estable. Los casos siguieron siendo los míos.
+- En la rúbrica me puso las opciones juntas, con lo que cada una gana y lo que pierde. La elección fue mía.
+- Señaló dónde un fallo sería grave y dónde solo molestaría. El semáforo lo armé yo a partir de eso.
+
+Decisiones del brainstorming:
+
+Tests unitarios que bloquean, escritos como mis casos:
+- Configuración: sin clave, con `cambia-esto`, con menos de 32 caracteres, y con una clave válida.
+- Autenticación: cada ruta sin clave y con clave incorrecta responde 401; una cabecera no ASCII no es un 500; sin clave y con JSON roto sigue siendo 401; las exenciones de `/docs` son exactamente las cuatro rutas.
+- Prompt: el CV viaja solo dentro de su bloque, el nonce cambia en cada construcción, y un marcador de cierre falso no cierra el bloque.
+- Salida del modelo: un `match_score` de 250 se rechaza, un JSON roto se rechaza, y también `85.5`, `"85"`, `true` y `NaN`. No se repara.
+- Simulador: los bordes de la rúbrica, la palabra completa (`Java` no es `JavaScript`) y el CV malicioso puntúa igual que el limpio.
+- Reintentos: solo se repite una salida inválida, como máximo 3 veces. Un timeout no se reintenta.
+- Guardián: en los tests, llamar a Gemini o abrir la red falla alto.
+
+Esos son los que protegen el enunciado. Los de rendimiento (Y1 a Y4) no entran aquí: miden y no bloquean.
+
+Diseño del endpoint de auditoría:
+- El plan base leía el historial en el GET y no quería un endpoint nuevo. Lo invertí yo. El GET se queda literal al enunciado, y mezclar ahí el historial lo habría sacado de esa lista.
+- El historial es `GET /candidates/{id}/audit`, solo lectura, con la misma clave que el resto.
+- Una fila por intento, también los fallidos. Nada se sustituye.
+- Se ve la oferta, el proveedor, el modelo, la versión del prompt, los intentos, el estado, el resultado o el código de error, la duración y la `reference`.
+- No se ve el CV ni el `error_detail`. La tabla no tiene columna para el CV, y el detalle del error no sale en la respuesta.
+- Del más nuevo al más antiguo. `limit` de 1 a 100, por defecto 20. `offset` desde 0.
+
+Límites:
+- El semáforo (rojo, amarillo, verde) es el límite de cómo se trabaja, no un adorno. Rojo: un fallo podría filtrar una clave o un CV, saltarse la autenticación, inyectar SQL, colar una respuesta manipulada o llamar al modelo real. Se hace por partes, conmigo, y el commit es mío. Amarillo: los tests lo cazan, pero la decisión la defiendo yo. Verde: solo rompe herramientas, documentación o el CI. Esos commits los hace la IA, con su firma, tras `make check`. Once ramas salieron en 11 rojas, 5 amarillas y 8 verdes. El amarillo del semáforo no es el de los tests de rendimiento.
+- Lo que no construí lo dejé escrito, para no presentarlo como hecho. Son los Issues #9 y #14 a #27: límite de peticiones, contraste de las skills con el CV, una clave por cliente, más auditoría, proteger `main`, no repetir un análisis idéntico, registro de los rechazos sin el cuerpo, UUID, apagar `/docs`, un segundo proveedor, el healthcheck de Compose, construir la imagen en el CI, una CSP, el listado de candidatos y tests con datos generados. El #9 ya estaba abierto. Los otros catorce se me olvidó abrirlos en cada rama: los creé al final, con el código ya fusionado.
+- La cobertura se quedó informativa en esta pasada. Pasar al 80 % bloqueante solo si el número se mantenía es la Entrada 9.
+- Los planes siguen fuera del repositorio. Esta entrada la escribo al cerrar, no el día de la planificación.
+---
+
 ## Entrada 1 · ci/pipeline-and-skeleton · PR #1 · 2026-11-21
 Modo: B, delegado (partes: esqueleto, herramientas y CI).
 Herramienta: Claude Code con Opus 5.5 (`claude-opus-5-5`), desde Cursor.
