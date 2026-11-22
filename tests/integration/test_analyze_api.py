@@ -219,7 +219,7 @@ def test_valid_but_wrong_score_is_accepted_known_limit(make_client):
     If a real model is persuaded by the malicious CV and answers with a score that is
     still valid (here 100 instead of 90), validation cannot tell it is wrong: the answer
     has the right shape and range. A deterministic cross-check of the skills against the
-    CV would catch it; that improvement is tracked in Issue 2.
+    CV would catch it; that improvement is tracked in Issue #9.
     """
     client, _ = make_client([valid_output(match_score=100)])
     candidate_id = _create(client, cv_text=read_cv("cv_malicious.txt"))
